@@ -64,12 +64,20 @@ SP                        = require 'steampipes'
   return R
 
 #-----------------------------------------------------------------------------------------------------------
-@walk_all_possible_names = ( count ) ->
+@walk_all_possible_names = ( min_chr_count, max_chr_count ) ->
+  max_chr_count ?= min_chr_count
+  validate.count min_chr_count
+  validate.count max_chr_count
+  unless min_chr_count <= max_chr_count
+    throw new Error "^7763^ min_chr_count must be equal or greater than max_chr_count, got #{min_chr_count}, #{max_chr_count}"
+  for count in [ min_chr_count .. max_chr_count ]
+    yield from @_walk_all_possible_names count
+  return
+
+#-----------------------------------------------------------------------------------------------------------
+@_walk_all_possible_names = ( count ) ->
+  return if count is 0
   permutation = require 'string-permutation'
-  validate.count count
-  #.........................................................................................................
-  if count is 0
-    yield return
   #.........................................................................................................
   if count is 1
     yield chr for chr in @valid_npmchrs.first
@@ -100,31 +108,44 @@ SP                        = require 'steampipes'
 
 #-----------------------------------------------------------------------------------------------------------
 @f = -> new Promise ( resolve ) =>
+  last          = Symbol 'last'
   all_npmnames  = new Set @all_npmnames
-  chr_count     = 2
-  source        = @walk_all_possible_names chr_count
-  pipeline      = []
-  pipeline.push source
-  # pipeline.push SP.$filter ( name ) -> name.length < 2
-  # pipeline.push SP.$filter ( name ) -> isa._frei_npmname name
-  # pipeline.push SP.$filter ( name ) -> /(.)\1\1/.test name
-  # pipeline.push SP.$filter ( name ) -> name.startsWith 'q'
-  pipeline.push SP.$filter ( name ) -> not /[._-]/.test name
-  pipeline.push SP.$filter ( name ) -> not /[0-9]/.test name
-  # pipeline.push SP.$filter ( name ) -> not /^[0-9]/.test name
-  pipeline.push SP.$filter ( name ) -> not /^-/.test name
-  pipeline.push SP.$filter ( name ) -> not /[._-]$/.test name
-  pipeline.push SP.$filter ( name ) -> not all_npmnames.has name
-  # pipeline.push $ ( d, send ) -> send d.join ''
-  pipeline.push SP.$show()
-  pipeline.push SP.$sort()
-  # pipeline.push $watch
-  pipeline.push $drain ( names ) -> resolve names
-  SP.pull pipeline...
+  min_chr_count = 2
+  max_chr_count = 4
+  main_source   = @walk_all_possible_names min_chr_count, max_chr_count
+  writer_source = SP.new_push_source()
+  output_path   = '/tmp/free-npm-names.txt'
+  ( require 'fs' ).writeFileSync output_path, ''
   #.........................................................................................................
-  # multipermute ( Array.from 'abc' ), source.send.bind source
-  # source.send [ chr, chr, ] for chr in 'uvxabc'
-  source.end()
+  writer        = []
+  writer.push writer_source
+  writer.push SP.$as_line()
+  writer.push SP.tee_write_to_file_sync output_path
+  writer.push $drain()
+  SP.pull writer...
+  #.........................................................................................................
+  main          = []
+  main.push main_source
+  # main.push SP.$filter ( name ) -> name.length < 2
+  # main.push SP.$filter ( name ) -> isa._frei_npmname name
+  # main.push SP.$filter ( name ) -> /(.)\1\1/.test name
+  # main.push SP.$filter ( name ) -> name.startsWith 'q'
+  main.push SP.$filter ( name ) -> not /[._-]/.test name
+  main.push SP.$filter ( name ) -> not /[0-9]/.test name
+  # main.push SP.$filter ( name ) -> not /^[0-9]/.test name
+  main.push SP.$filter ( name ) -> not /^-/.test name
+  main.push SP.$filter ( name ) -> not /[._-]$/.test name
+  main.push SP.$filter ( name ) -> not all_npmnames.has name
+  # main.push $ ( d, send ) -> send d.join ''
+  # main.push SP.$show()
+  main.push SP.$sort()
+  main.push $watch { last, }, ( d ) -> return writer_source.end() if d is last; writer_source.send d
+  # main.push $watch
+  # main.push $drain ( names ) -> resolve names
+  main.push $drain()
+  SP.pull main...
+  #.........................................................................................................
+  main_source.end()
   return null
 
 
