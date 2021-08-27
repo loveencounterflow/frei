@@ -49,7 +49,7 @@ SP                        = require 'steampipes'
   $show  }                = SP.export()
 #...........................................................................................................
 @all_npmnames             = require 'all-the-package-names'
-
+debug '^624^', 'cup' in @all_npmnames
 
 #-----------------------------------------------------------------------------------------------------------
 @get_valid_npmchrs = ( position ) ->
@@ -111,10 +111,10 @@ SP                        = require 'steampipes'
   last          = Symbol 'last'
   all_npmnames  = new Set @all_npmnames
   min_chr_count = 2
-  max_chr_count = 4
+  max_chr_count = 3
   main_source   = @walk_all_possible_names min_chr_count, max_chr_count
   writer_source = SP.new_push_source()
-  output_path   = '/tmp/free-npm-names.txt'
+  output_path   = './free-npm-names.txt'
   ( require 'fs' ).writeFileSync output_path, ''
   #.........................................................................................................
   writer        = []
@@ -135,6 +135,9 @@ SP                        = require 'steampipes'
   # main.push SP.$filter ( name ) -> not /^[0-9]/.test name
   main.push SP.$filter ( name ) -> not /^-/.test name
   main.push SP.$filter ( name ) -> not /[._-]$/.test name
+  main.push SP.$filter ( name ) -> /^[^aeiou][aeiou].$/.test name
+  # main.push SP.$filter ( name ) -> /(^.[aeiou])|(^[aeiou].[aeiou])/.test name
+  # main.push SP.$filter ( name ) -> /^[aeiou].[aeiou]/.test name
   main.push SP.$filter ( name ) -> not all_npmnames.has name
   # main.push $ ( d, send ) -> send d.join ''
   # main.push SP.$show()
@@ -145,7 +148,6 @@ SP                        = require 'steampipes'
   main.push $drain()
   SP.pull main...
   #.........................................................................................................
-  main_source.end()
   return null
 
 
